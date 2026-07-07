@@ -313,11 +313,152 @@ button:disabled {
   place-items: center;
 }
 
+.pet-sprite-frame {
+  position: relative;
+  width: 132px;
+  height: 140px;
+  display: grid;
+  place-items: center;
+  transform-origin: 50% 86%;
+  animation: pet-idle 2.4s ease-in-out infinite;
+}
+
 .generated-pet-image {
   width: 122px;
   height: 132px;
   object-fit: contain;
   filter: drop-shadow(0 10px 0 rgba(38, 50, 56, 0.08));
+  transform-origin: 50% 82%;
+  animation: pet-breathe 1.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+.pet-blink {
+  position: absolute;
+  left: 34px;
+  top: 48px;
+  width: 64px;
+  height: 16px;
+  pointer-events: none;
+  border-radius: 999px;
+  background: rgba(38, 50, 56, 0.82);
+  opacity: 0;
+  transform: scaleY(0.25);
+  animation: pet-blink 4.2s steps(1, end) infinite;
+}
+
+.pet-paw {
+  position: absolute;
+  bottom: 16px;
+  width: 18px;
+  height: 16px;
+  pointer-events: none;
+  border-radius: 50% 50% 44% 44%;
+  background: rgba(38, 50, 56, 0.86);
+  opacity: 0.74;
+}
+
+.pet-paw.left {
+  left: 28px;
+  animation: paw-left 1.2s ease-in-out infinite;
+}
+
+.pet-paw.right {
+  right: 28px;
+  animation: paw-right 1.2s ease-in-out infinite;
+}
+
+.pet-action-effect {
+  position: absolute;
+  right: 20px;
+  top: 18px;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  border-radius: 999px;
+  background: var(--gold);
+  box-shadow: 16px 8px 0 rgba(46, 196, 182, 0.85), -10px 16px 0 rgba(255, 107, 107, 0.78);
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.motion-label {
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  z-index: 2;
+  max-width: 96px;
+  transform: translateX(-50%);
+  padding: 3px 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  color: #1f5a57;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(46, 196, 182, 0.26);
+}
+
+.motion-happy .pet-sprite-frame,
+.motion-play .pet-sprite-frame {
+  animation: pet-hop 0.78s ease-in-out infinite;
+}
+
+.motion-run .pet-sprite-frame {
+  animation: pet-run 0.46s steps(2, end) infinite;
+}
+
+.motion-feed .generated-pet-image,
+.motion-drink .generated-pet-image {
+  animation: pet-nod 0.72s ease-in-out infinite;
+}
+
+.motion-sleep .pet-sprite-frame,
+.motion-sleepy .pet-sprite-frame {
+  animation: pet-sleep 2.2s ease-in-out infinite;
+}
+
+.motion-heal .pet-sprite-frame,
+.motion-weak .pet-sprite-frame {
+  animation: pet-weak 1.6s ease-in-out infinite;
+}
+
+.motion-study .generated-pet-image {
+  animation: pet-focus 1.1s ease-in-out infinite;
+}
+
+.motion-bath .generated-pet-image {
+  animation: pet-shake 0.32s linear infinite;
+}
+
+.motion-play .pet-paw.right,
+.motion-happy .pet-paw.right {
+  opacity: 0.9;
+  animation: paw-wave 0.72s ease-in-out infinite;
+}
+
+.motion-play .pet-action-effect,
+.motion-happy .pet-action-effect,
+.motion-bath .pet-action-effect,
+.motion-heal .pet-action-effect {
+  opacity: 0.9;
+  animation: pet-pop 0.9s ease-in-out infinite;
+}
+
+.motion-run .pet-paw.left {
+  animation: paw-run-left 0.46s steps(2, end) infinite;
+}
+
+.motion-run .pet-paw.right {
+  animation: paw-run-right 0.46s steps(2, end) infinite;
+}
+
+.motion-sleep .pet-blink,
+.motion-sleepy .pet-blink {
+  opacity: 0.38;
+  animation: none;
 }
 
 .pet-avatar.photo-avatar::before {
@@ -1308,6 +1449,177 @@ button:disabled {
 .bottom-nav button.active {
   color: #fff;
   background: #263238;
+}
+
+@keyframes pet-idle {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(-1deg);
+  }
+}
+
+@keyframes pet-breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.025, 0.985);
+  }
+}
+
+@keyframes pet-blink {
+  0%, 88%, 100% {
+    opacity: 0;
+  }
+  90%, 93% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes pet-hop {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  42% {
+    transform: translateY(-16px) scale(1.04, 0.96);
+  }
+  72% {
+    transform: translateY(2px) scale(0.98, 1.04);
+  }
+}
+
+@keyframes pet-run {
+  0% {
+    transform: translate(-7px, -2px) rotate(-3deg);
+  }
+  50% {
+    transform: translate(7px, -6px) rotate(3deg);
+  }
+  100% {
+    transform: translate(-7px, -2px) rotate(-3deg);
+  }
+}
+
+@keyframes pet-nod {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  45% {
+    transform: translateY(6px) rotate(2deg);
+  }
+}
+
+@keyframes pet-sleep {
+  0%, 100% {
+    transform: translateY(2px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(2deg);
+  }
+}
+
+@keyframes pet-weak {
+  0%, 100% {
+    transform: translateY(0) rotate(-4deg);
+    opacity: 0.86;
+  }
+  50% {
+    transform: translateY(3px) rotate(3deg);
+    opacity: 1;
+  }
+}
+
+@keyframes pet-focus {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  50% {
+    transform: translateX(3px) rotate(1.5deg);
+  }
+}
+
+@keyframes pet-shake {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(-3px) rotate(-2deg);
+  }
+  75% {
+    transform: translateX(3px) rotate(2deg);
+  }
+}
+
+@keyframes paw-left {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(2px) rotate(8deg);
+  }
+}
+
+@keyframes paw-right {
+  0%, 100% {
+    transform: translateY(1px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(-8deg);
+  }
+}
+
+@keyframes paw-wave {
+  0%, 100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  35% {
+    transform: translate(4px, -13px) rotate(24deg);
+  }
+  70% {
+    transform: translate(0, -8px) rotate(-18deg);
+  }
+}
+
+@keyframes paw-run-left {
+  0%, 100% {
+    transform: translate(8px, -8px);
+  }
+  50% {
+    transform: translate(-8px, 4px);
+  }
+}
+
+@keyframes paw-run-right {
+  0%, 100% {
+    transform: translate(-8px, 4px);
+  }
+  50% {
+    transform: translate(8px, -8px);
+  }
+}
+
+@keyframes pet-pop {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.55) translateY(4px);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1) translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-sprite-frame,
+  .generated-pet-image,
+  .pet-blink,
+  .pet-paw,
+  .pet-action-effect,
+  .spinner {
+    animation: none !important;
+  }
 }
 
 @media (max-width: 360px) {

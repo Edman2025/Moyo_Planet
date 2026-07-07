@@ -939,6 +939,7 @@ function App() {
             currentJob={currentJob}
             remaining={remaining}
             currentCare={currentCare}
+            currentCareKind={state.runningCare?.kind}
             careRemaining={careRemaining}
             onAction={applyAction}
             onNavigate={setTab}
@@ -1115,6 +1116,7 @@ function HomeView({
   currentJob,
   remaining,
   currentCare,
+  currentCareKind,
   careRemaining,
   onAction,
   onNavigate,
@@ -1124,10 +1126,12 @@ function HomeView({
   currentJob?: Job
   remaining: number
   currentCare?: { label: string; duration: number }
+  currentCareKind?: CareKind
   careRemaining: number
   onAction: (kind?: CareKind) => void
   onNavigate: (tab: Tab) => void
 }) {
+  const [petTrick, setPetTrick] = useState('')
   const actions = [
     { label: '喂食', icon: Apple, patch: { hunger: 18, mood: 3 }, task: 'feed', kind: 'feed' },
     { label: '喝水', icon: Droplets, patch: { thirst: 22 }, task: 'drink', kind: 'drink' },
@@ -1137,6 +1141,37 @@ function HomeView({
     { label: '娱乐', icon: ToyBrick, patch: { mood: 20, social: 8, energy: -5 }, kind: 'play' },
     { label: '洗澡', icon: Bath, patch: { clean: 30, mood: 4 }, kind: 'bath' },
   ]
+  const baseMotion = currentJob
+    ? 'run'
+    : currentCareKind
+      ? currentCareKind
+      : state.states.health < 35
+        ? 'weak'
+        : state.states.sleep < 30
+          ? 'sleepy'
+          : state.states.mood > 75
+          ? 'happy'
+          : 'idle'
+  const motion = !currentJob && !currentCareKind && petTrick ? petTrick : baseMotion
+  const motionText = petTrick && !currentJob && !currentCareKind
+    ? '互动动作'
+    : currentJob
+    ? '正在打工奔跑'
+    : currentCare
+      ? `${currentCare.label}动作中`
+      : motion === 'weak'
+        ? '有点虚弱'
+        : motion === 'sleepy'
+          ? '困困待机'
+          : motion === 'happy'
+            ? '开心跳跳'
+            : '待机互动'
+  const playPetTrick = () => {
+    if (!state.generatedPetUrl || currentJob || currentCareKind) return
+    const tricks = ['happy', 'play', 'run', 'study', 'bath']
+    setPetTrick(tricks[Math.floor(Date.now() / 700) % tricks.length])
+    window.setTimeout(() => setPetTrick(''), 1800)
+  }
 
   return (
     <div className="screen-stack">
@@ -1147,11 +1182,27 @@ function HomeView({
             <span />
             <span />
           </div>
-          <div className={`pet-avatar ${state.generatedPetUrl && state.generated ? 'generated-avatar' : ''}`} aria-label="原创卡通宠物">
+          <div
+            className={`pet-avatar motion-${motion} ${state.generatedPetUrl && state.generated ? 'generated-avatar' : ''}`}
+            aria-label="原创卡通宠物，点击互动"
+            role={state.generatedPetUrl ? 'button' : undefined}
+            tabIndex={state.generatedPetUrl ? 0 : undefined}
+            onClick={playPetTrick}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') playPetTrick()
+            }}
+          >
             {state.generatedPetUrl && state.generated ? (
               <>
-                <img className="generated-pet-image" src={assetUrl(state.generatedPetUrl)} alt={`${state.petName}的生成萌宠图片`} />
+                <div className="pet-sprite-frame">
+                  <img className="generated-pet-image" src={assetUrl(state.generatedPetUrl)} alt={`${state.petName}的生成萌宠图片`} />
+                  <span className="pet-blink" aria-hidden="true" />
+                  <span className="pet-paw left" aria-hidden="true" />
+                  <span className="pet-paw right" aria-hidden="true" />
+                  <span className="pet-action-effect" aria-hidden="true" />
+                </div>
                 <span className="avatar-style">{state.petStyle}</span>
+                <span className="motion-label">{motionText}</span>
               </>
             ) : (
               <>
