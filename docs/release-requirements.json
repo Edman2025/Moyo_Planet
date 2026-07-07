@@ -1,0 +1,45 @@
+{
+  "objective": "根据需求文档全面进行功能核查和测试，要求真实可玩，所有功能都能跑通，不能有测试数据，假数据。目标上线发布给真实用户注册使用。",
+  "requirements": [
+    {
+      "id": "real-registration-login",
+      "summary": "真实玩家可以注册、登录、恢复 session，并安全退出。",
+      "evidence": ["npm run verify", "npm run verify:journey"]
+    },
+    {
+      "id": "server-authoritative-progress",
+      "summary": "金币、钻石、学历、技能、任务、工作、停车和社交收益由服务端结算，客户端不能篡改。",
+      "evidence": ["npm run verify"]
+    },
+    {
+      "id": "photo-upload-pet-generation",
+      "summary": "玩家可以真实上传图片生成宠物，上传成功有反馈，替换和重置会清理旧上传。",
+      "evidence": ["npm run verify", "npm run verify:journey", "npm run verify:ui"]
+    },
+    {
+      "id": "learning-job-progression",
+      "summary": "年级、学历、学分和编程/商业/沟通技能会成长，并解锁更高薪工作。",
+      "evidence": ["npm run verify", "npm run verify:journey", "npm run verify:ui"]
+    },
+    {
+      "id": "social-real-users-only",
+      "summary": "好友、农场、赠礼、公共聊天和共享停车基于真实注册玩家，不依赖种子假数据。",
+      "evidence": ["npm run verify", "npm run verify:journey", "npm run audit:readiness"]
+    },
+    {
+      "id": "no-test-or-fake-data",
+      "summary": "默认数据库和新用户初始社交状态为空，本地 data 目录不残留测试数据。",
+      "evidence": ["npm run verify", "npm run verify:clean-data", "npm run audit:readiness"]
+    },
+    {
+      "id": "production-hardening",
+      "summary": "生产配置、数据目录、安全响应头、上传路径、限流、JSON 解析、方法约束和备份恢复均有验证。",
+      "evidence": ["npm run verify", "npm run verify:install", "npm run verify:secrets", "npm run verify:dependencies", "npm run verify:docker-context", "npm run verify:docker-build", "npm run verify:docker-runtime", "npm run release:check", "npm run release:full"]
+    },
+    {
+      "id": "release-gate",
+      "summary": "上线前有一键闸门覆盖 readiness audit、lint、build、API 验证、玩家旅程和生产 smoke。",
+      "evidence": ["npm run release:check", "npm run release:full", "npm run verify:clean-data", "npm run verify:ui", "npm run verify:docker-context", "npm run verify:docker-build", "npm run verify:docker-runtime"]
+    }
+  ]
+}
