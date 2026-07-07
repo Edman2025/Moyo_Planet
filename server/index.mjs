@@ -8,6 +8,7 @@ const rootDir = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dataDir = process.env.DATA_DIR ? resolve(process.env.DATA_DIR) : join(rootDir, 'data')
 const uploadsDir = join(dataDir, 'uploads')
 const generatedPetsDir = join(dataDir, 'generated-pets')
+const generatedVideosDir = join(dataDir, 'generated-videos')
 const dbPath = join(dataDir, 'moyo-db.json')
 const backupDbPath = join(dataDir, 'moyo-db.backup.json')
 const distDir = join(rootDir, 'dist')
@@ -59,6 +60,7 @@ const petBlindBoxCoinCost = 360
 
 mkdirSync(uploadsDir, { recursive: true })
 mkdirSync(generatedPetsDir, { recursive: true })
+mkdirSync(generatedVideosDir, { recursive: true })
 
 const defaultDb = {
   users: {},
@@ -1369,6 +1371,7 @@ const serveFile = (req, res, filePath) => {
     '.jpeg': 'image/jpeg',
     '.webp': 'image/webp',
     '.gif': 'image/gif',
+    '.mp4': 'video/mp4',
   }
   if (!existsSync(filePath)) return false
   try {
@@ -1468,6 +1471,15 @@ const server = http.createServer((req, res) => {
     }
     const petPath = join(generatedPetsDir, basename(rawPath))
     if (!serveFile(req, res, petPath)) json(res, 404, { error: '文件不存在' })
+    return
+  }
+  if (rawPath.startsWith('/generated-videos/')) {
+    if (!/^\/generated-videos\/[a-f0-9]{32}\.mp4$/.test(rawPath)) {
+      json(res, 404, { error: '文件不存在' })
+      return
+    }
+    const videoPath = join(generatedVideosDir, basename(rawPath))
+    if (!serveFile(req, res, videoPath)) json(res, 404, { error: '文件不存在' })
     return
   }
   const staticPath = resolveStaticPath(url.pathname)
