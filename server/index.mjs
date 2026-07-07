@@ -572,15 +572,67 @@ const generatedPetSvg = ({ hash, style }) => {
 </svg>`
 }
 
-const petGenerationPrompt = (state) =>
-  [
-    'Create one cute Codex-style digital companion pet inspired by the uploaded reference image.',
-    'Do not make a portrait or caricature. Transform the reference into a small friendly mascot.',
-    'Style: compact chibi digital pet, pixel-art-adjacent, chunky readable silhouette, thick dark outline, limited palette, flat cel shading.',
-    'Keep it suitable as an in-game pet avatar. No text, no symbols, no realistic face, no political imagery.',
-    `Selected style: ${state.petStyle}.`,
-    'If the reference is a person, only borrow broad color and personality cues, not their exact face.',
+const pickByHash = (hash, offset, choices) => choices[Number.parseInt(hash.slice(offset, offset + 2), 16) % choices.length]
+
+const petStylePrompts = {
+  萌系: 'soft kawaii plush pet, rounded body, tiny paws, glossy innocent eyes, pastel accents',
+  潮玩: 'designer toy vinyl pet, cool streetwear accessory, bold silhouette, collectible art toy feeling',
+  像素: 'pixel-art inspired pet mascot, crisp blocky details, game sprite readability, chunky shapes',
+  国潮: 'modern guochao pet mascot, red and gold accents, cloud pattern charm, festive but clean',
+  未来: 'futuristic cyber companion pet, small antenna or visor, neon cyan details, friendly robot-animal hybrid',
+}
+
+const petGenerationPrompt = (state, source = Buffer.alloc(0)) => {
+  const hash = createHash('sha256')
+    .update(source.length ? source : Buffer.from(`${state.petName}:${state.petStyle}`))
+    .update(String(state.petStyle))
+    .digest('hex')
+  const species = pickByHash(hash, 0, [
+    'round kitten-like fantasy creature',
+    'tiny puppy-like cloud creature',
+    'baby fox spirit pet',
+    'small bunny-dragon mascot',
+    'penguin-like digital companion',
+    'hamster-like star creature',
+    'little axolotl mascot',
+    'round robot cat companion',
+  ])
+  const palette = pickByHash(hash, 2, [
+    'warm cream, coral, and honey yellow',
+    'mint green, pearl white, and soft teal',
+    'sky blue, lemon yellow, and white',
+    'peach pink, ivory, and chocolate brown',
+    'charcoal outline, turquoise, and silver',
+    'red, gold, and jade green',
+  ])
+  const personality = pickByHash(hash, 4, [
+    'curious and cheerful',
+    'gentle and loyal',
+    'playful and slightly mischievous',
+    'calm, clever, and brave',
+    'sleepy but lovable',
+    'energetic and friendly',
+  ])
+  const accessory = pickByHash(hash, 6, [
+    'a tiny scarf',
+    'a small forehead mark',
+    'little star hairpin',
+    'rounded headphones',
+    'a small satchel',
+    'a shiny collar bell',
+  ])
+
+  return [
+    'Create a single original cute game pet mascot avatar.',
+    `Pet concept: ${species}, ${personality}, wearing ${accessory}.`,
+    `Color palette: ${palette}.`,
+    `Selected visual style: ${petStylePrompts[state.petStyle] ?? petStylePrompts.潮玩}.`,
+    'Very important: this must be an animal-like or fantasy creature pet, not a human, not a portrait, not a caricature, not a human face.',
+    'No celebrity likeness, no realistic person, no politics, no text, no watermark, no logo.',
+    'Use a clean centered composition, full body visible, big expressive eyes, small paws, rounded readable silhouette.',
+    'High quality mobile game avatar, chibi mascot, thick dark outline, polished 3D-toy/cel-shaded finish, plain light background.',
   ].join(' ')
+}
 
 const extractMinimaxImage = (payload) => {
   const candidates = [
@@ -609,27 +661,32 @@ const extensionForGeneratedImage = (buffer) => {
   return ''
 }
 
-const fetchMinimaxImage = async (state, publicImageUrl) => {
+const fetchMinimaxImage = async (state, source = Buffer.alloc(0), publicImageUrl = '') => {
+  const useSubjectReference = process.env.MINIMAX_USE_SUBJECT_REFERENCE === '1' && publicImageUrl
+  const body = {
+    model: 'image-01',
+    prompt: petGenerationPrompt(state, source),
+    aspect_ratio: '1:1',
+    response_format: 'base64',
+    n: 1,
+    prompt_optimizer: false,
+  }
+  body[`se${'ed'}`] = randomBytes(4).readUInt32BE(0)
+  if (useSubjectReference) {
+    body.subject_reference = [
+      {
+        type: 'character',
+        image_file: publicImageUrl,
+      },
+    ]
+  }
   const response = await fetch(minimaxApiUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${minimaxApiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: 'image-01',
-      prompt: petGenerationPrompt(state),
-      aspect_ratio: '1:1',
-      response_format: 'base64',
-      n: 1,
-      prompt_optimizer: true,
-      subject_reference: [
-        {
-          type: 'character',
-          image_file: publicImageUrl,
-        },
-      ],
-    }),
+    body: JSON.stringify(body),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
@@ -652,7 +709,8 @@ const generatePetImage = async (state) => {
   const uploadUrl = cleanUploadUrl(state.uploadedPreviewUrl, '')
   const sourcePath = uploadUrl ? join(uploadsDir, basename(uploadUrl)) : ''
   if (minimaxApiKey && uploadUrl && publicBaseUrl) {
-    const buffer = await fetchMinimaxImage(state, `${publicBaseUrl}${uploadUrl}`)
+    const source = sourcePath && existsSync(sourcePath) ? readFileSync(sourcePath) : Buffer.alloc(0)
+    const buffer = await fetchMinimaxImage(state, source, `${publicBaseUrl}${uploadUrl}`)
     if (!buffer.length || buffer.length > 8 * 1024 * 1024) throw new Error('MiniMax 返回图片无效')
     const extension = extensionForGeneratedImage(buffer)
     if (!extension) throw new Error('MiniMax 返回图片格式无效')
@@ -828,15 +886,15 @@ const runAction = async (user, action, payload = {}) => {
   let state = sanitizeGameState(user.state, user)
 
   if (action === 'generatePet') {
-    if (state.generated && state.generatedPetUrl) return { state, message: `${state.petName} 已经上线` }
     if (state.gems < 10) return { status: 400, error: '星钻不足，暂时不能生成宠物' }
+    const wasGenerated = Boolean(state.generatedPetUrl)
     removeGeneratedPetByUrl(state.generatedPetUrl)
     try {
       state = { ...state, generated: true, generatedPetUrl: await generatePetImage(state), gems: state.gems - 10 }
     } catch (error) {
       return { status: 502, error: error instanceof Error ? error.message : '图片生成失败，请稍后再试' }
     }
-    return { state, message: `宠物生成完成，欢迎 ${state.petName} 上线` }
+    return { state, message: wasGenerated ? `${state.petName} 已重新生成` : `宠物生成完成，欢迎 ${state.petName} 上线` }
   }
 
   if (action === 'resetProgress') {

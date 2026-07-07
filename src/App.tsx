@@ -1307,7 +1307,15 @@ function CreateView({
           ))}
         </div>
         <button type="button" className="primary-button" onClick={onGenerate} disabled={isGenerating || isUploading}>
-          {isUploading ? '照片上传中...' : isGenerating ? '生成中...' : state.uploadedFileName ? '用上传照片生成' : '使用默认形象生成'}
+          {
+            isUploading
+              ? '照片上传中...'
+              : isGenerating
+                ? '生成中...'
+                : state.generatedPetUrl
+                  ? '重新生成宠物'
+                  : state.uploadedFileName ? '用上传照片生成' : '使用默认形象生成'
+          }
         </button>
       </section>
     </div>
