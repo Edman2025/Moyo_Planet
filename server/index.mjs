@@ -592,14 +592,14 @@ const petGenerationPrompt = (state, source = Buffer.alloc(0)) => {
     .update(String(state.petStyle))
     .digest('hex')
   const species = pickByHash(hash, 0, [
-    'round kitten-like fantasy creature',
-    'tiny puppy-like cloud creature',
-    'baby fox spirit pet',
-    'small bunny-dragon mascot',
-    'penguin-like digital companion',
-    'hamster-like star creature',
-    'little axolotl mascot',
-    'round robot cat companion',
+    'tiny humanoid companion pet',
+    'chibi human-like digital buddy',
+    'small collectible humanoid mascot',
+    'round-headed toy-like human companion',
+    'miniature avatar pet with human features',
+    'friendly pocket-size humanoid character',
+    'stylized doll-like companion pet',
+    'Q-version human-shaped digital pet',
   ])
   const palette = pickByHash(hash, 2, [
     'warm cream, coral, and honey yellow',
@@ -627,14 +627,17 @@ const petGenerationPrompt = (state, source = Buffer.alloc(0)) => {
   ])
 
   return [
-    'Create a single original cute game pet mascot avatar.',
+    'Create a single cute human-shaped game pet mascot avatar from the uploaded reference person.',
     `Pet concept: ${species}, ${personality}, wearing ${accessory}.`,
     `Color palette: ${palette}.`,
     `Selected visual style: ${petStylePrompts[state.petStyle] ?? petStylePrompts.潮玩}.`,
-    'Very important: this must be an animal-like or fantasy creature pet, not a human, not a portrait, not a caricature, not a human face.',
-    'No celebrity likeness, no realistic person, no politics, no text, no watermark, no logo.',
-    'Use a clean centered composition, full body visible, big expressive eyes, small paws, rounded readable silhouette.',
-    'High quality mobile game avatar, chibi mascot, thick dark outline, polished 3D-toy/cel-shaded finish, plain light background.',
+    'Preserve the main recognizable visual traits from the reference: hair shape and color, face proportions, eyebrows, eye shape, mouth expression, skin tone, and overall personality.',
+    'Transform those traits into a unified full-body chibi humanoid pet. The head, body, outfit, hands, and feet must belong to the same stylized character.',
+    'Very important: do not paste a realistic human head onto an animal body. Do not create an animal body. Do not make a plain portrait bust.',
+    'The face must be stylized and toy-like: simplified skin texture, smoother cheeks, rounded toy proportions, cute mascot expression. Avoid photorealistic pores, wrinkles, realistic wax figure skin, or a lifelike bust.',
+    'Make it look like a cute Codex-style collectible companion: big head, small body, expressive face, tiny hands and feet, rounded readable silhouette.',
+    'No text, no watermark, no logo, no political symbols, no flags, no campaign signs.',
+    'Use a clean centered composition, full body visible, thick dark outline, polished 3D-toy/cel-shaded finish, plain light background.',
   ].join(' ')
 }
 
@@ -666,7 +669,7 @@ const extensionForGeneratedImage = (buffer) => {
 }
 
 const fetchMinimaxImage = async (state, source = Buffer.alloc(0), publicImageUrl = '') => {
-  const useSubjectReference = process.env.MINIMAX_USE_SUBJECT_REFERENCE === '1' && publicImageUrl
+  const useSubjectReference = process.env.MINIMAX_USE_SUBJECT_REFERENCE !== '0' && publicImageUrl
   const body = {
     model: 'image-01',
     prompt: petGenerationPrompt(state, source),
