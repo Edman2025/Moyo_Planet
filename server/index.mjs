@@ -54,6 +54,8 @@ const rateWindowMs = positiveNumber('RATE_LIMIT_WINDOW_MS', 60_000)
 const maxRequestsPerWindow = positiveNumber('RATE_LIMIT_MAX', 180)
 const trustProxy = booleanFlag('TRUST_PROXY')
 const sessionTtlMs = positiveNumber('SESSION_TTL_DAYS', 30) * 24 * 60 * 60 * 1000
+const firstPetGemCost = 10
+const petBlindBoxCoinCost = 360
 
 mkdirSync(uploadsDir, { recursive: true })
 mkdirSync(generatedPetsDir, { recursive: true })
@@ -886,15 +888,30 @@ const runAction = async (user, action, payload = {}) => {
   let state = sanitizeGameState(user.state, user)
 
   if (action === 'generatePet') {
-    if (state.gems < 10) return { status: 400, error: '星钻不足，暂时不能生成宠物' }
     const wasGenerated = Boolean(state.generatedPetUrl)
+    if (wasGenerated) {
+      if (state.coins < petBlindBoxCoinCost) return { status: 400, error: `金币不足，形象盲盒需要 ${petBlindBoxCoinCost} 金币` }
+    } else if (state.gems < firstPetGemCost) {
+      return { status: 400, error: `星钻不足，首次孵化需要 ${firstPetGemCost} 星钻` }
+    }
     removeGeneratedPetByUrl(state.generatedPetUrl)
     try {
-      state = { ...state, generated: true, generatedPetUrl: await generatePetImage(state), gems: state.gems - 10 }
+      state = {
+        ...state,
+        generated: true,
+        generatedPetUrl: await generatePetImage(state),
+        coins: wasGenerated ? state.coins - petBlindBoxCoinCost : state.coins,
+        gems: wasGenerated ? state.gems : state.gems - firstPetGemCost,
+      }
     } catch (error) {
       return { status: 502, error: error instanceof Error ? error.message : '图片生成失败，请稍后再试' }
     }
-    return { state, message: wasGenerated ? `${state.petName} 已重新生成` : `宠物生成完成，欢迎 ${state.petName} 上线` }
+    return {
+      state,
+      message: wasGenerated
+        ? `形象盲盒开启成功，金币 -${petBlindBoxCoinCost}`
+        : `宠物生成完成，星钻 -${firstPetGemCost}`,
+    }
   }
 
   if (action === 'resetProgress') {

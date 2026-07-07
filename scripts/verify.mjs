@@ -399,6 +399,33 @@ try {
   if (!firstGeneratedSvg.includes('@keyframes bob') || !firstGeneratedSvg.includes('shape-rendering="crispEdges"')) {
     throw new Error('generated pet image should be an animated pixel-adjacent companion SVG')
   }
+  const blindBoxRegistration = await request('/api/register', {
+    method: 'POST',
+    body: JSON.stringify({ nickname: '盲盒验收', petName: '盲盒宠', password: 'verify123' }),
+  }, 201)
+  const blindBoxFirst = await request('/api/action', {
+    method: 'POST',
+    token: blindBoxRegistration.token,
+    body: JSON.stringify({ action: 'generatePet', payload: {} }),
+  })
+  const blindBoxReroll = await request('/api/action', {
+    method: 'POST',
+    token: blindBoxRegistration.token,
+    body: JSON.stringify({ action: 'generatePet', payload: {} }),
+  })
+  if (
+    !blindBoxReroll.state.generatedPetUrl ||
+    blindBoxReroll.state.generatedPetUrl === blindBoxFirst.state.generatedPetUrl ||
+    blindBoxReroll.state.coins !== blindBoxFirst.state.coins - 360 ||
+    blindBoxReroll.state.gems !== blindBoxFirst.state.gems
+  ) {
+    throw new Error('pet blind box reroll should replace the image and spend coins')
+  }
+  await request('/api/action', {
+    method: 'POST',
+    token: blindBoxRegistration.token,
+    body: JSON.stringify({ action: 'resetProgress', payload: {} }),
+  })
 
   const tampered = await request('/api/state', {
     method: 'PUT',
@@ -818,7 +845,12 @@ try {
     token: login.token,
     body: JSON.stringify({ action: 'generatePet', payload: {} }),
   })
-  if (!regenerated.state.generatedPetUrl || regenerated.state.generatedPetUrl === generated.state.generatedPetUrl) {
+  if (
+    !regenerated.state.generatedPetUrl ||
+    regenerated.state.generatedPetUrl === generated.state.generatedPetUrl ||
+    regenerated.state.coins !== replacementUpload.state.coins ||
+    regenerated.state.gems !== replacementUpload.state.gems - 10
+  ) {
     throw new Error('photo upload generation should create a fresh generated pet image')
   }
   const regeneratedAsset = await rawRequest(regenerated.state.generatedPetUrl)
@@ -925,7 +957,7 @@ try {
   const db = JSON.parse(readFileSync(join(dataDir, 'moyo-db.json'), 'utf8'))
   const users = Object.values(db.users)
   const uploadFiles = readdirSync(join(dataDir, 'uploads'))
-  if (users.length !== 3) throw new Error('verification should create exactly three users in isolated data dir')
+  if (users.length !== 4) throw new Error('verification should create exactly four users in isolated data dir')
   if (users.some((user) => user.passwordAlgorithm !== 'pbkdf2-sha256' || !user.passwordHash || user.passwordHash === 'verify123')) {
     throw new Error('password hash was not stored safely')
   }
@@ -940,7 +972,7 @@ try {
   const recoveredHealthResponse = await rawRequest('/api/health')
   const recoveredHealth = await recoveredHealthResponse.json()
   const recoveredDb = JSON.parse(readFileSync(join(dataDir, 'moyo-db.json'), 'utf8'))
-  if (!recoveredHealth.ok || Object.keys(recoveredDb.users).length !== 3) {
+  if (!recoveredHealth.ok || Object.keys(recoveredDb.users).length !== 4) {
     throw new Error(`backup recovery failed: ${JSON.stringify(recoveredHealth)}`)
   }
 

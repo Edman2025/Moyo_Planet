@@ -46,6 +46,8 @@ const assetUrl = (path?: string) => {
   if (/^https?:\/\//.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path
   return `${apiBaseUrl}${path}`
 }
+const FIRST_PET_GEM_COST = 10
+const PET_BLIND_BOX_COIN_COST = 360
 
 type Tab = 'home' | 'create' | 'work' | 'shop' | 'city' | 'social' | 'tasks'
 type PetStateKey =
@@ -1371,6 +1373,16 @@ function CreateView({
             </div>
           </div>
         ) : null}
+        {!isGenerating ? (
+          <div className="blind-box-note">
+            <Gift size={16} />
+            <span>
+              {state.generatedPetUrl
+                ? `不满意可开形象盲盒重抽：消耗 ${PET_BLIND_BOX_COIN_COST} 金币，当前 ${state.coins} 金币`
+                : `首次孵化消耗 ${FIRST_PET_GEM_COST} 星钻，生成后可用金币盲盒继续重抽`}
+            </span>
+          </div>
+        ) : null}
         <button type="button" className="primary-button" onClick={onGenerate} disabled={isGenerating || isUploading}>
           {
             isUploading
@@ -1378,7 +1390,7 @@ function CreateView({
               : isGenerating
                 ? '生成中...'
                 : state.generatedPetUrl
-                  ? '重新生成宠物'
+                  ? `金币盲盒重抽 -${PET_BLIND_BOX_COIN_COST}`
                   : state.uploadedFileName ? '用上传照片生成' : '使用默认形象生成'
           }
         </button>
