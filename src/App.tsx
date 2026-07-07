@@ -772,15 +772,19 @@ function App() {
     void runServerAction('studyCourse', { courseId: course.id })
   }
 
-  const generatePet = () => {
+  const generatePet = async () => {
+    if (isGenerating) return
     setIsGenerating(true)
-    setToast(state.uploadedFileName ? `正在用 MiniMax 孵化 ${state.uploadedFileName}` : '正在孵化默认数字宠物')
-    window.setTimeout(() => {
+    setToast(state.uploadedFileName ? `正在用 MiniMax 生成 ${state.uploadedFileName}，完成后自动回到首页` : '正在孵化默认数字宠物，完成后自动回到首页')
+    try {
+      const nextState = await runServerAction('generatePet', {})
+      if (nextState) {
+        setToast('生成完成，正在前往首页展示')
+        setTab('home')
+      }
+    } finally {
       setIsGenerating(false)
-      void runServerAction('generatePet', {}).then((nextState) => {
-        if (nextState) setTab('home')
-      })
-    }, 1400)
+    }
   }
 
   const uploadPhoto = async (file?: File) => {
@@ -1267,7 +1271,7 @@ function CreateView({
           <input
             type="file"
             accept="image/*"
-            disabled={isUploading}
+            disabled={isUploading || isGenerating}
             onChange={(event) => onUpload(event.target.files?.[0])}
           />
           {isUploading ? (
@@ -1300,12 +1304,22 @@ function CreateView({
               type="button"
               key={style}
               className={state.petStyle === style ? 'active' : ''}
+              disabled={isGenerating}
               onClick={() => onStyle(style)}
             >
               {style}
             </button>
           ))}
         </div>
+        {isGenerating ? (
+          <div className="generation-status" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div>
+              <strong>AI 正在生成宠物形象</strong>
+              <small>通常需要十几秒到一分钟，请不要关闭页面，完成后会自动跳到首页展示。</small>
+            </div>
+          </div>
+        ) : null}
         <button type="button" className="primary-button" onClick={onGenerate} disabled={isGenerating || isUploading}>
           {
             isUploading
