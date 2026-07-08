@@ -1,9 +1,9 @@
 import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
 import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import http from 'node:http'
+import sharp from 'sharp'
 
 const rootDir = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dataDir = process.env.DATA_DIR ? resolve(process.env.DATA_DIR) : join(rootDir, 'data')
@@ -598,11 +598,11 @@ const generatedPetSvg = ({ hash, style }) => {
 const pickByHash = (hash, offset, choices) => choices[Number.parseInt(hash.slice(offset, offset + 2), 16) % choices.length]
 
 const petStylePrompts = {
-  萌系: 'soft kawaii plush pet, rounded body, tiny paws, glossy innocent eyes, pastel accents',
-  潮玩: 'designer toy vinyl pet, cool streetwear accessory, bold silhouette, collectible art toy feeling',
-  像素: 'pixel-art inspired pet mascot, crisp blocky details, game sprite readability, chunky shapes',
-  国潮: 'modern guochao pet mascot, red and gold accents, cloud pattern charm, festive but clean',
-  未来: 'futuristic cyber companion pet, small antenna or visor, neon cyan details, friendly robot-animal hybrid',
+  萌系: 'soft kawaii chibi human mascot, rounded cheeks, gentle eyes, pastel outfit accents',
+  潮玩: 'designer vinyl art-toy human avatar, bold silhouette, streetwear outfit, collectible figure feeling',
+  像素: 'pixel-art inspired chibi human avatar, crisp blocky outfit details, game sprite readability',
+  国潮: 'modern guochao chibi human mascot, red and gold outfit accents, clean cloud pattern charm',
+  未来: 'futuristic chibi human companion, small visor or antenna accessory, silver and lime outfit accents',
 }
 
 const petGenerationPrompt = (state, source = Buffer.alloc(0)) => {
@@ -646,15 +646,18 @@ const petGenerationPrompt = (state, source = Buffer.alloc(0)) => {
   ])
 
   return [
-    'Create one cute human-shaped game pet mascot from the uploaded person.',
+    'Create one recognizable chibi humanoid game companion from the uploaded person.',
     `Concept: ${species}, ${personality}, ${accessory}.`,
     `Color palette: ${palette}.`,
     `Style: ${petStylePrompts[state.petStyle] ?? petStylePrompts.潮玩}.`,
-    'Preserve the reference person traits: hair shape/color, face shape, eyebrows, eyes, mouth, skin tone, expression.',
-    'Make a unified full-body chibi humanoid pet, not a portrait, not a realistic head, not an animal body.',
-    'Toy-like cute face, big head, small body, tiny hands and feet, thick dark outline, polished cel-shaded mascot.',
+    'Most important: keep a clear caricature likeness to the reference person, so the same person is recognizable.',
+    'Preserve facial identity cues: hair shape and color, hairline, face shape, eyebrow shape, eye shape, nose, mouth, skin tone, age impression, and expression.',
+    'Keep the uploaded clothing cues when visible, simplified into a cute full-body outfit.',
+    'Make a unified full-body chibi humanoid companion, not a portrait pasted on a body, not an animal body.',
+    'Cute toy proportions, big head, small body, small hands and feet, thick clean outline, polished cel-shaded mascot.',
+    'Do not turn the person into a generic baby doll; likeness is higher priority than cuteness.',
     'No text, watermark, logo, political symbols, flags, or signs.',
-    'Flat pure chroma-key magenta background #FF00FF, no shadow, no pink or magenta on the character, full body centered.',
+    'Flat pure chroma-key blue background #0000FF, no shadow, no blue or cyan on the character, full body centered.',
   ].join(' ')
 }
 
@@ -691,51 +694,175 @@ const mimeForGeneratedImage = (extension) => {
   return 'image/jpeg'
 }
 
-const readCornerColor = (inputPath) => {
-  try {
-    const pixel = execFileSync('ffmpeg', [
-      '-v',
-      'error',
-      '-i',
-      inputPath,
-      '-vf',
-      'crop=1:1:0:0,format=rgb24',
-      '-frames:v',
-      '1',
-      '-f',
-      'rawvideo',
-      '-',
-    ], { encoding: 'buffer' })
-    if (pixel.length >= 3) return [pixel[0], pixel[1], pixel[2]].map((value) => value.toString(16).padStart(2, '0')).join('')
-  } catch {
-    return '00ff00'
-  }
-  return '00ff00'
+const colorDistance = (data, index, color) => {
+  const dr = data[index] - color[0]
+  const dg = data[index + 1] - color[1]
+  const db = data[index + 2] - color[2]
+  return Math.sqrt(dr * dr + dg * dg + db * db)
 }
 
-const removeChromaBackground = (buffer, extension) => {
-  const inputPath = join(generatedPetsDir, `${randomBytes(16).toString('hex')}${extension || '.jpg'}`)
-  const outputPath = join(generatedPetsDir, `${randomBytes(16).toString('hex')}.png`)
-  writeFileSync(inputPath, buffer)
+const isGeneratedBackgroundPixel = (data, index, background) => {
+  const red = data[index]
+  const green = data[index + 1]
+  const blue = data[index + 2]
+  const closeToEdgeBackground = colorDistance(data, index, background) < 96
+  const blueScreen = blue > 120 && red < 120 && blue - red > 44 && green > 42
+  const cyanScreen = green > 120 && blue > 120 && red < 165 && Math.abs(green - blue) < 96
+  const paleCyanFloor = green > 145 && blue > 135 && red < 190 && green - red > 18 && blue - red > 8
+  return closeToEdgeBackground || blueScreen || cyanScreen || paleCyanFloor
+}
+
+const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? 0
+
+const estimateEdgeBackground = (data, width, height) => {
+  const red = []
+  const green = []
+  const blue = []
+  const push = (x, y) => {
+    const index = (y * width + x) * 4
+    red.push(data[index])
+    green.push(data[index + 1])
+    blue.push(data[index + 2])
+  }
+  for (let x = 0; x < width; x += Math.max(1, Math.floor(width / 80))) {
+    push(x, 0)
+    push(x, height - 1)
+  }
+  for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 80))) {
+    push(0, y)
+    push(width - 1, y)
+  }
+  return [median(red), median(green), median(blue)]
+}
+
+const keepPrimaryAlphaComponent = (data, width, height) => {
+  const total = width * height
+  const visited = new Uint8Array(total)
+  const components = []
+  const stack = []
+  for (let start = 0; start < total; start += 1) {
+    if (visited[start] || data[start * 4 + 3] <= 12) continue
+    visited[start] = 1
+    stack.push(start)
+    const pixels = []
+    while (stack.length) {
+      const pixel = stack.pop()
+      pixels.push(pixel)
+      const x = pixel % width
+      const y = Math.floor(pixel / width)
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (!dx && !dy) continue
+          const nx = x + dx
+          const ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+          const next = ny * width + nx
+          if (visited[next] || data[next * 4 + 3] <= 12) continue
+          visited[next] = 1
+          stack.push(next)
+        }
+      }
+    }
+    components.push(pixels)
+  }
+  if (!components.length) return
+  components.sort((a, b) => b.length - a.length)
+  const minimumKeepSize = Math.max(240, Math.floor(components[0].length * 0.018))
+  for (const pixels of components.slice(1)) {
+    if (pixels.length >= minimumKeepSize) continue
+    for (const pixel of pixels) data[pixel * 4 + 3] = 0
+  }
+}
+
+const removeChromaBackground = async (buffer, extension) => {
   try {
-    const cornerColor = readCornerColor(inputPath)
-    execFileSync('ffmpeg', [
-      '-y',
-      '-i',
-      inputPath,
-      '-vf',
-      `format=rgba,colorkey=0x${cornerColor}:0.20:0.05`,
-      '-frames:v',
-      '1',
-      outputPath,
-    ], { stdio: 'ignore' })
-    const cutout = readFileSync(outputPath)
-    unlinkSync(inputPath)
-    unlinkSync(outputPath)
-    return { buffer: cutout, extension: '.png', mime: 'image/png' }
+    const normalized = await sharp(buffer)
+      .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const { data, info } = normalized
+    const { width, height } = info
+    const background = estimateEdgeBackground(data, width, height)
+    const threshold = 58
+    const softThreshold = 34
+    const visited = new Uint8Array(width * height)
+    const queue = []
+    const enqueue = (x, y) => {
+      if (x < 0 || y < 0 || x >= width || y >= height) return
+      const pixel = y * width + x
+      if (visited[pixel]) return
+      const index = pixel * 4
+      if (colorDistance(data, index, background) > threshold) return
+      visited[pixel] = 1
+      queue.push(pixel)
+    }
+    for (let x = 0; x < width; x += 1) {
+      enqueue(x, 0)
+      enqueue(x, height - 1)
+    }
+    for (let y = 0; y < height; y += 1) {
+      enqueue(0, y)
+      enqueue(width - 1, y)
+    }
+    while (queue.length) {
+      const pixel = queue.pop()
+      const x = pixel % width
+      const y = Math.floor(pixel / width)
+      enqueue(x + 1, y)
+      enqueue(x - 1, y)
+      enqueue(x, y + 1)
+      enqueue(x, y - 1)
+    }
+    let minX = width
+    let minY = height
+    let maxX = 0
+    let maxY = 0
+    for (let pixel = 0; pixel < width * height; pixel += 1) {
+      const index = pixel * 4
+      if (visited[pixel]) {
+        const distance = colorDistance(data, index, background)
+        data[index + 3] = distance < softThreshold ? 0 : Math.min(160, Math.round((distance - softThreshold) * 4))
+      }
+      if (data[index + 3] > 0 && isGeneratedBackgroundPixel(data, index, background)) data[index + 3] = 0
+      if (data[index + 3] > 12) {
+        const x = pixel % width
+        const y = Math.floor(pixel / width)
+        minX = Math.min(minX, x)
+        minY = Math.min(minY, y)
+        maxX = Math.max(maxX, x)
+        maxY = Math.max(maxY, y)
+      }
+    }
+    keepPrimaryAlphaComponent(data, width, height)
+    minX = width
+    minY = height
+    maxX = 0
+    maxY = 0
+    for (let pixel = 0; pixel < width * height; pixel += 1) {
+      const index = pixel * 4
+      if (data[index + 3] > 12) {
+        const x = pixel % width
+        const y = Math.floor(pixel / width)
+        minX = Math.min(minX, x)
+        minY = Math.min(minY, y)
+        maxX = Math.max(maxX, x)
+        maxY = Math.max(maxY, y)
+      }
+    }
+    if (minX === width || minY === height) throw new Error('no foreground after background removal')
+    const padding = 24
+    const left = Math.max(0, minX - padding)
+    const top = Math.max(0, minY - padding)
+    const cropWidth = Math.min(width - left, maxX - minX + padding * 2)
+    const cropHeight = Math.min(height - top, maxY - minY + padding * 2)
+    const output = await sharp(data, { raw: { width, height, channels: 4 } })
+      .extract({ left, top, width: Math.max(1, cropWidth), height: Math.max(1, cropHeight) })
+      .resize(720, 840, { fit: 'inside', withoutEnlargement: true })
+      .png()
+      .toBuffer()
+    return { buffer: output, extension: '.png', mime: 'image/png' }
   } catch {
-    try { unlinkSync(inputPath) } catch {}
-    try { unlinkSync(outputPath) } catch {}
     return { buffer, extension, mime: mimeForGeneratedImage(extension) }
   }
 }
@@ -844,7 +971,7 @@ const generatePetImage = async (state) => {
     if (!buffer.length || buffer.length > 8 * 1024 * 1024) throw new Error('MiniMax 返回图片无效')
     const extension = extensionForGeneratedImage(buffer)
     if (!extension) throw new Error('MiniMax 返回图片格式无效')
-    const cutout = removeChromaBackground(buffer, extension)
+    const cutout = await removeChromaBackground(buffer, extension)
     const imageName = `${randomBytes(16).toString('hex')}${cutout.extension}`
     const animationName = `${randomBytes(16).toString('hex')}.svg`
     writeFileSync(join(generatedPetsDir, imageName), cutout.buffer)
