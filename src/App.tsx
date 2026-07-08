@@ -143,6 +143,7 @@ type AppState = {
   uploadedFileName?: string
   uploadedPreviewUrl?: string
   generatedPetUrl?: string
+  generatedPetAnimationUrl?: string
   level: number
   exp: number
   coins: number
@@ -194,6 +195,7 @@ const initialState: AppState = {
   uploadedFileName: undefined,
   uploadedPreviewUrl: undefined,
   generatedPetUrl: undefined,
+  generatedPetAnimationUrl: undefined,
   level: 1,
   exp: 40,
   coins: 1280,
@@ -466,6 +468,7 @@ const normalizeState = (state: AppState): AppState => ({
     state.uploadedPreviewUrl && !state.uploadedPreviewUrl.startsWith('blob:') ? state.uploadedFileName : undefined,
   uploadedPreviewUrl: state.uploadedPreviewUrl?.startsWith('blob:') ? undefined : state.uploadedPreviewUrl,
   generatedPetUrl: /^\/generated-pets\/[a-f0-9]{32}\.(svg|png|jpg|jpeg|webp)$/.test(state.generatedPetUrl ?? '') ? state.generatedPetUrl : undefined,
+  generatedPetAnimationUrl: /^\/generated-pet-animations\/[a-f0-9]{32}\.svg$/.test(state.generatedPetAnimationUrl ?? '') ? state.generatedPetAnimationUrl : undefined,
   states: { ...initialState.states, ...state.states },
   attrs: { ...initialState.attrs, ...state.attrs },
   education: {
@@ -1197,11 +1200,15 @@ function HomeView({
             {state.generatedPetUrl && state.generated ? (
               <>
                 <div className="pet-sprite-frame">
-                  <img className="generated-pet-image" src={assetUrl(state.generatedPetUrl)} alt={`${state.petName}的生成萌宠图片`} />
-                  <span className="pet-blink" aria-hidden="true" />
-                  <span className="pet-paw left" aria-hidden="true" />
-                  <span className="pet-paw right" aria-hidden="true" />
-                  <span className="pet-action-effect" aria-hidden="true" />
+                  <img className="generated-pet-image" src={assetUrl(state.generatedPetAnimationUrl || state.generatedPetUrl)} alt={`${state.petName}的生成萌宠动图`} />
+                  {!state.generatedPetAnimationUrl ? (
+                    <>
+                      <span className="pet-blink" aria-hidden="true" />
+                      <span className="pet-paw left" aria-hidden="true" />
+                      <span className="pet-paw right" aria-hidden="true" />
+                      <span className="pet-action-effect" aria-hidden="true" />
+                    </>
+                  ) : null}
                 </div>
                 <span className="avatar-style">{state.petStyle}</span>
                 <span className="motion-label">{motionText}</span>

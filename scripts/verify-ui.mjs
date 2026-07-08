@@ -164,7 +164,10 @@ try {
   }
   const generatedPetVisible = await page.locator('.generated-pet-image').evaluate((image) => {
     const img = image
-    return img instanceof HTMLImageElement && img.complete && img.naturalWidth > 0 && img.src.includes('/generated-pets/')
+    return img instanceof HTMLImageElement &&
+      img.complete &&
+      img.naturalWidth > 0 &&
+      (img.src.includes('/generated-pets/') || img.src.includes('/generated-pet-animations/'))
   })
   if (!generatedPetVisible) throw new Error('ui did not render a real generated pet image')
   await page.getByRole('button', { name: '喂食' }).click({ force: true })

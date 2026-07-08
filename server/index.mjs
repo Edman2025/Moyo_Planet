@@ -1,4 +1,5 @@
 import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +9,7 @@ const rootDir = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dataDir = process.env.DATA_DIR ? resolve(process.env.DATA_DIR) : join(rootDir, 'data')
 const uploadsDir = join(dataDir, 'uploads')
 const generatedPetsDir = join(dataDir, 'generated-pets')
+const generatedPetAnimationsDir = join(dataDir, 'generated-pet-animations')
 const generatedVideosDir = join(dataDir, 'generated-videos')
 const dbPath = join(dataDir, 'moyo-db.json')
 const backupDbPath = join(dataDir, 'moyo-db.backup.json')
@@ -60,6 +62,7 @@ const petBlindBoxCoinCost = 360
 
 mkdirSync(uploadsDir, { recursive: true })
 mkdirSync(generatedPetsDir, { recursive: true })
+mkdirSync(generatedPetAnimationsDir, { recursive: true })
 mkdirSync(generatedVideosDir, { recursive: true })
 
 const defaultDb = {
@@ -323,6 +326,7 @@ const createInitialGameState = (profile, petName) => ({
   uploadedFileName: undefined,
   uploadedPreviewUrl: undefined,
   generatedPetUrl: undefined,
+  generatedPetAnimationUrl: undefined,
   level: 1,
   exp: 40,
   coins: 1280,
@@ -430,6 +434,12 @@ const cleanGeneratedPetUrl = (value, fallback) => {
   return fallback
 }
 
+const cleanGeneratedPetAnimationUrl = (value, fallback) => {
+  const url = typeof value === 'string' ? value : ''
+  if (/^\/generated-pet-animations\/[a-f0-9]{32}\.svg$/.test(url)) return url
+  return fallback
+}
+
 const removeUploadByUrl = (url) => {
   if (!/^\/uploads\/[a-f0-9]{32}\.(png|jpg|webp|gif)$/.test(String(url ?? ''))) return
   try {
@@ -445,6 +455,15 @@ const removeGeneratedPetByUrl = (url) => {
     unlinkSync(join(generatedPetsDir, basename(url)))
   } catch {
     // Missing generated images are harmless; state is still cleaned by the caller.
+  }
+}
+
+const removeGeneratedPetAnimationByUrl = (url) => {
+  if (!/^\/generated-pet-animations\/[a-f0-9]{32}\.svg$/.test(String(url ?? ''))) return
+  try {
+    unlinkSync(join(generatedPetAnimationsDir, basename(url)))
+  } catch {
+    // Missing generated animations are harmless; state is still cleaned by the caller.
   }
 }
 
@@ -627,17 +646,15 @@ const petGenerationPrompt = (state, source = Buffer.alloc(0)) => {
   ])
 
   return [
-    'Create a single cute human-shaped game pet mascot avatar from the uploaded reference person.',
-    `Pet concept: ${species}, ${personality}, wearing ${accessory}.`,
+    'Create one cute human-shaped game pet mascot from the uploaded person.',
+    `Concept: ${species}, ${personality}, ${accessory}.`,
     `Color palette: ${palette}.`,
-    `Selected visual style: ${petStylePrompts[state.petStyle] ?? petStylePrompts.潮玩}.`,
-    'Preserve the main recognizable visual traits from the reference: hair shape and color, face proportions, eyebrows, eye shape, mouth expression, skin tone, and overall personality.',
-    'Transform those traits into a unified full-body chibi humanoid pet. The head, body, outfit, hands, and feet must belong to the same stylized character.',
-    'Very important: do not paste a realistic human head onto an animal body. Do not create an animal body. Do not make a plain portrait bust.',
-    'The face must be stylized and toy-like: simplified skin texture, smoother cheeks, rounded toy proportions, cute mascot expression. Avoid photorealistic pores, wrinkles, realistic wax figure skin, or a lifelike bust.',
-    'Make it look like a cute Codex-style collectible companion: big head, small body, expressive face, tiny hands and feet, rounded readable silhouette.',
-    'No text, no watermark, no logo, no political symbols, no flags, no campaign signs.',
-    'Use a clean centered composition, full body visible, thick dark outline, polished 3D-toy/cel-shaded finish, plain light background.',
+    `Style: ${petStylePrompts[state.petStyle] ?? petStylePrompts.潮玩}.`,
+    'Preserve the reference person traits: hair shape/color, face shape, eyebrows, eyes, mouth, skin tone, expression.',
+    'Make a unified full-body chibi humanoid pet, not a portrait, not a realistic head, not an animal body.',
+    'Toy-like cute face, big head, small body, tiny hands and feet, thick dark outline, polished cel-shaded mascot.',
+    'No text, watermark, logo, political symbols, flags, or signs.',
+    'Flat pure chroma-key magenta background #FF00FF, no shadow, no pink or magenta on the character, full body centered.',
   ].join(' ')
 }
 
@@ -666,6 +683,112 @@ const extensionForGeneratedImage = (buffer) => {
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return '.jpg'
   if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return '.webp'
   return ''
+}
+
+const mimeForGeneratedImage = (extension) => {
+  if (extension === '.png') return 'image/png'
+  if (extension === '.webp') return 'image/webp'
+  return 'image/jpeg'
+}
+
+const readCornerColor = (inputPath) => {
+  try {
+    const pixel = execFileSync('ffmpeg', [
+      '-v',
+      'error',
+      '-i',
+      inputPath,
+      '-vf',
+      'crop=1:1:0:0,format=rgb24',
+      '-frames:v',
+      '1',
+      '-f',
+      'rawvideo',
+      '-',
+    ], { encoding: 'buffer' })
+    if (pixel.length >= 3) return [pixel[0], pixel[1], pixel[2]].map((value) => value.toString(16).padStart(2, '0')).join('')
+  } catch {
+    return '00ff00'
+  }
+  return '00ff00'
+}
+
+const removeChromaBackground = (buffer, extension) => {
+  const inputPath = join(generatedPetsDir, `${randomBytes(16).toString('hex')}${extension || '.jpg'}`)
+  const outputPath = join(generatedPetsDir, `${randomBytes(16).toString('hex')}.png`)
+  writeFileSync(inputPath, buffer)
+  try {
+    const cornerColor = readCornerColor(inputPath)
+    execFileSync('ffmpeg', [
+      '-y',
+      '-i',
+      inputPath,
+      '-vf',
+      `format=rgba,colorkey=0x${cornerColor}:0.20:0.05`,
+      '-frames:v',
+      '1',
+      outputPath,
+    ], { stdio: 'ignore' })
+    const cutout = readFileSync(outputPath)
+    unlinkSync(inputPath)
+    unlinkSync(outputPath)
+    return { buffer: cutout, extension: '.png', mime: 'image/png' }
+  } catch {
+    try { unlinkSync(inputPath) } catch {}
+    try { unlinkSync(outputPath) } catch {}
+    return { buffer, extension, mime: mimeForGeneratedImage(extension) }
+  }
+}
+
+const generatedPetAnimationSvg = ({ imageBuffer, mime, petName }) => {
+  const dataUri = `data:${mime};base64,${imageBuffer.toString('base64')}`
+  const label = normalizeText(petName || '萌友').slice(0, 16)
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="${label}动作动图">
+  <style>
+    @keyframes petMove {
+      0%, 10% { transform: translate(0, 0) scale(1); }
+      13%, 22% { transform: translate(-4px, 8px) scale(1.03, .97); }
+      25%, 34% { transform: translate(4px, 3px) rotate(2deg); }
+      37%, 46% { transform: translate(0, 12px) rotate(-4deg); opacity: .88; }
+      49%, 58% { transform: translate(0, -4px) rotate(1deg); }
+      61%, 70% { transform: translate(0, 18px) rotate(-8deg) scale(.98); }
+      73%, 82% { transform: translate(12px, -8px) rotate(5deg); }
+      85%, 94% { transform: translate(0, -18px) scale(1.08, .94); }
+      97%, 100% { transform: translate(-5px, 4px) rotate(-3deg); }
+    }
+    @keyframes propEat { 0%, 11%, 24%, 100% { opacity: 0; } 13%, 22% { opacity: 1; transform: translate(152px, 138px) scale(1); } }
+    @keyframes propDrink { 0%, 24%, 36%, 100% { opacity: 0; } 26%, 34% { opacity: 1; transform: translate(150px, 132px) rotate(-8deg); } }
+    @keyframes propSick { 0%, 36%, 48%, 100% { opacity: 0; } 38%, 46% { opacity: 1; transform: translate(152px, 58px); } }
+    @keyframes propStudy { 0%, 48%, 60%, 100% { opacity: 0; } 50%, 58% { opacity: 1; transform: translate(84px, 162px); } }
+    @keyframes propSleep { 0%, 60%, 72%, 100% { opacity: 0; } 62%, 70% { opacity: 1; transform: translate(156px, 42px); } }
+    @keyframes propWork { 0%, 72%, 84%, 100% { opacity: 0; } 74%, 82% { opacity: 1; transform: translate(60px, 152px); } }
+    @keyframes propPlay { 0%, 84%, 96%, 100% { opacity: 0; } 86%, 94% { opacity: 1; transform: translate(160px, 62px) scale(1.1); } }
+    @keyframes propBath { 0%, 94%, 100% { opacity: 1; } 0%, 10% { opacity: .6; } }
+    .pet { transform-origin: 120px 178px; animation: petMove 15s ease-in-out infinite; }
+    .prop { opacity: 0; transform-origin: center; }
+    .eat { animation: propEat 15s steps(1,end) infinite; }
+    .drink { animation: propDrink 15s steps(1,end) infinite; }
+    .sick { animation: propSick 15s steps(1,end) infinite; }
+    .study { animation: propStudy 15s steps(1,end) infinite; }
+    .sleep { animation: propSleep 15s steps(1,end) infinite; }
+    .work { animation: propWork 15s steps(1,end) infinite; }
+    .play { animation: propPlay 15s steps(1,end) infinite; }
+    .bath { animation: propBath 15s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .pet,.prop { animation: none; } }
+  </style>
+  <rect width="240" height="240" fill="none"/>
+  <g class="bath prop">
+    <circle cx="55" cy="160" r="7" fill="#a8ecff"/><circle cx="174" cy="150" r="6" fill="#a8ecff"/><circle cx="146" cy="188" r="5" fill="#a8ecff"/>
+  </g>
+  <g class="pet"><image href="${dataUri}" x="34" y="14" width="172" height="198" preserveAspectRatio="xMidYMid meet"/></g>
+  <g class="eat prop"><circle r="13" fill="#fff4bf" stroke="#263238" stroke-width="3"/><circle cx="-4" cy="-3" r="3" fill="#f6b23a"/></g>
+  <g class="drink prop"><rect x="-9" y="-16" width="18" height="28" rx="5" fill="#8ce7ff" stroke="#263238" stroke-width="3"/><rect x="-7" y="-4" width="14" height="14" fill="#2ec4b6"/></g>
+  <g class="sick prop"><rect x="-5" y="-18" width="10" height="28" rx="5" fill="#fff" stroke="#263238" stroke-width="3"/><circle cy="16" r="8" fill="#ff6b6b" stroke="#263238" stroke-width="3"/></g>
+  <g class="study prop"><rect x="-24" y="-14" width="48" height="30" rx="4" fill="#fff9d9" stroke="#263238" stroke-width="3"/><path d="M0 -13v28" stroke="#263238" stroke-width="3"/></g>
+  <g class="sleep prop"><text x="0" y="0" font-size="24" font-weight="900" fill="#263238">Z</text></g>
+  <g class="work prop"><rect x="-18" y="-12" width="36" height="24" rx="4" fill="#6d4c41" stroke="#263238" stroke-width="3"/><path d="M-8 -12v-8h16v8" fill="none" stroke="#263238" stroke-width="3"/></g>
+  <g class="play prop"><path d="M0 -18l5 12 13 1-10 8 3 13-11-7-11 7 3-13-10-8 13-1z" fill="#ffca3a" stroke="#263238" stroke-width="3"/></g>
+</svg>`
 }
 
 const fetchMinimaxImage = async (state, source = Buffer.alloc(0), publicImageUrl = '') => {
@@ -721,15 +844,35 @@ const generatePetImage = async (state) => {
     if (!buffer.length || buffer.length > 8 * 1024 * 1024) throw new Error('MiniMax 返回图片无效')
     const extension = extensionForGeneratedImage(buffer)
     if (!extension) throw new Error('MiniMax 返回图片格式无效')
-    const imageName = `${randomBytes(16).toString('hex')}${extension}`
-    writeFileSync(join(generatedPetsDir, imageName), buffer)
-    return `/generated-pets/${imageName}`
+    const cutout = removeChromaBackground(buffer, extension)
+    const imageName = `${randomBytes(16).toString('hex')}${cutout.extension}`
+    const animationName = `${randomBytes(16).toString('hex')}.svg`
+    writeFileSync(join(generatedPetsDir, imageName), cutout.buffer)
+    writeFileSync(join(generatedPetAnimationsDir, animationName), generatedPetAnimationSvg({
+      imageBuffer: cutout.buffer,
+      mime: cutout.mime,
+      petName: state.petName,
+    }))
+    return {
+      imageUrl: `/generated-pets/${imageName}`,
+      animationUrl: `/generated-pet-animations/${animationName}`,
+    }
   }
   const source = sourcePath && existsSync(sourcePath) ? readFileSync(sourcePath) : Buffer.from(`${state.petName}:${state.petStyle}:${Date.now()}`)
   const hash = createHash('sha256').update(source).update(String(state.petStyle)).digest('hex')
   const imageName = `${randomBytes(16).toString('hex')}.svg`
-  writeFileSync(join(generatedPetsDir, imageName), generatedPetSvg({ hash, style: state.petStyle }))
-  return `/generated-pets/${imageName}`
+  const fallbackSvg = Buffer.from(generatedPetSvg({ hash, style: state.petStyle }))
+  const animationName = `${randomBytes(16).toString('hex')}.svg`
+  writeFileSync(join(generatedPetsDir, imageName), fallbackSvg)
+  writeFileSync(join(generatedPetAnimationsDir, animationName), generatedPetAnimationSvg({
+    imageBuffer: fallbackSvg,
+    mime: 'image/svg+xml',
+    petName: state.petName,
+  }))
+  return {
+    imageUrl: `/generated-pets/${imageName}`,
+    animationUrl: `/generated-pet-animations/${animationName}`,
+  }
 }
 
 const sanitizeGameState = (input, user) => {
@@ -746,6 +889,7 @@ const sanitizeGameState = (input, user) => {
       : state.uploadedFileName ? cleanString(state.uploadedFileName, current.uploadedFileName ?? '', 120) : current.uploadedFileName,
     uploadedPreviewUrl: state.uploadedPreviewUrl === null ? undefined : cleanUploadUrl(state.uploadedPreviewUrl, current.uploadedPreviewUrl),
     generatedPetUrl: state.generatedPetUrl === null ? undefined : cleanGeneratedPetUrl(state.generatedPetUrl, current.generatedPetUrl),
+    generatedPetAnimationUrl: state.generatedPetAnimationUrl === null ? undefined : cleanGeneratedPetAnimationUrl(state.generatedPetAnimationUrl, current.generatedPetAnimationUrl),
     level: clampNumber(state.level, 1, 200, current.level),
     exp: clampNumber(state.exp, 0, 10_000_000, current.exp),
     coins: clampNumber(state.coins, 0, 10_000_000, current.coins),
@@ -900,11 +1044,14 @@ const runAction = async (user, action, payload = {}) => {
       return { status: 400, error: `星钻不足，首次孵化需要 ${firstPetGemCost} 星钻` }
     }
     removeGeneratedPetByUrl(state.generatedPetUrl)
+    removeGeneratedPetAnimationByUrl(state.generatedPetAnimationUrl)
     try {
+      const generatedAsset = await generatePetImage(state)
       state = {
         ...state,
         generated: true,
-        generatedPetUrl: await generatePetImage(state),
+        generatedPetUrl: generatedAsset.imageUrl,
+        generatedPetAnimationUrl: generatedAsset.animationUrl,
         coins: wasGenerated ? state.coins - petBlindBoxCoinCost : state.coins,
         gems: wasGenerated ? state.gems : state.gems - firstPetGemCost,
       }
@@ -923,11 +1070,13 @@ const runAction = async (user, action, payload = {}) => {
     if (state.parkedSlot && db.parkingSlots[state.parkedSlot]?.userId === user.id) delete db.parkingSlots[state.parkedSlot]
     removeUploadByUrl(state.uploadedPreviewUrl)
     removeGeneratedPetByUrl(state.generatedPetUrl)
+    removeGeneratedPetAnimationByUrl(state.generatedPetAnimationUrl)
     state = {
       ...createInitialGameState(user.profile, state.petName),
       uploadedFileName: null,
       uploadedPreviewUrl: null,
       generatedPetUrl: null,
+      generatedPetAnimationUrl: null,
     }
     return { state, message: '进度已重置，玩家资料已保留' }
   }
@@ -1336,12 +1485,14 @@ const handleApi = async (req, res) => {
       const publicUrl = `/uploads/${uploadName}`
       removeUploadByUrl(user.state?.uploadedPreviewUrl)
       removeGeneratedPetByUrl(user.state?.generatedPetUrl)
+      removeGeneratedPetAnimationByUrl(user.state?.generatedPetAnimationUrl)
       user.state = {
         ...user.state,
         generated: false,
         uploadedFileName: cleanString(fileName, 'upload', 120),
         uploadedPreviewUrl: publicUrl,
         generatedPetUrl: undefined,
+        generatedPetAnimationUrl: undefined,
       }
       user.updatedAt = new Date().toISOString()
       saveDb()
@@ -1474,6 +1625,15 @@ const server = http.createServer((req, res) => {
     }
     const petPath = join(generatedPetsDir, basename(rawPath))
     if (!serveFile(req, res, petPath)) json(res, 404, { error: '文件不存在' })
+    return
+  }
+  if (rawPath.startsWith('/generated-pet-animations/')) {
+    if (!/^\/generated-pet-animations\/[a-f0-9]{32}\.svg$/.test(rawPath)) {
+      json(res, 404, { error: '文件不存在' })
+      return
+    }
+    const animationPath = join(generatedPetAnimationsDir, basename(rawPath))
+    if (!serveFile(req, res, animationPath)) json(res, 404, { error: '文件不存在' })
     return
   }
   if (rawPath.startsWith('/generated-videos/')) {
