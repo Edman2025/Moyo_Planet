@@ -17,6 +17,7 @@ const distDir = join(rootDir, 'dist')
 const maxJsonBytes = 6 * 1024 * 1024
 const minimaxApiKey = process.env.MINIMAX_API_KEY || ''
 const minimaxApiUrl = process.env.MINIMAX_API_URL || 'https://api.minimaxi.com/v1/image_generation'
+const minimaxVlmApiUrl = new URL('/v1/coding_plan/vlm', minimaxApiUrl).toString()
 const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '')
 
 const failConfig = (message) => {
@@ -595,70 +596,27 @@ const generatedPetSvg = ({ hash, style }) => {
 </svg>`
 }
 
-const pickByHash = (hash, offset, choices) => choices[Number.parseInt(hash.slice(offset, offset + 2), 16) % choices.length]
-
 const petStylePrompts = {
-  萌系: 'soft kawaii chibi human mascot, rounded cheeks, gentle eyes, pastel outfit accents',
-  潮玩: 'designer vinyl art-toy human avatar, bold silhouette, streetwear outfit, collectible figure feeling',
-  像素: 'pixel-art inspired chibi human avatar, crisp blocky outfit details, game sprite readability',
-  国潮: 'modern guochao chibi human mascot, red and gold outfit accents, clean cloud pattern charm',
-  未来: 'futuristic chibi human companion, small visor or antenna accessory, silver and lime outfit accents',
+  萌系: 'soft kawaii 2D sprite, rounded shapes and gentle pastel accents',
+  潮玩: 'bold pixel-adjacent 2D cartoon sprite, graphic silhouette and clean cel shading',
+  像素: 'polished pixel-art sprite, stepped edges, limited palette and flat shading',
+  国潮: 'modern guochao 2D sprite with restrained red-gold clothing accents',
+  未来: 'futuristic 2D sprite with compact silver-lime techwear, no helmet',
 }
 
-const petGenerationPrompt = (state, source = Buffer.alloc(0)) => {
-  const hash = createHash('sha256')
-    .update(source.length ? source : Buffer.from(`${state.petName}:${state.petStyle}`))
-    .update(String(state.petStyle))
-    .digest('hex')
-  const species = pickByHash(hash, 0, [
-    'tiny humanoid companion pet',
-    'chibi human-like digital buddy',
-    'small collectible humanoid mascot',
-    'round-headed toy-like human companion',
-    'miniature avatar pet with human features',
-    'friendly pocket-size humanoid character',
-    'stylized doll-like companion pet',
-    'Q-version human-shaped digital pet',
-  ])
-  const palette = pickByHash(hash, 2, [
-    'warm cream, coral, and honey yellow',
-    'mint green, pearl white, and soft teal',
-    'sky blue, lemon yellow, and white',
-    'peach pink, ivory, and chocolate brown',
-    'charcoal outline, turquoise, and silver',
-    'red, gold, and jade green',
-  ])
-  const personality = pickByHash(hash, 4, [
-    'curious and cheerful',
-    'gentle and loyal',
-    'playful and slightly mischievous',
-    'calm, clever, and brave',
-    'sleepy but lovable',
-    'energetic and friendly',
-  ])
-  const accessory = pickByHash(hash, 6, [
-    'a tiny scarf',
-    'a small forehead mark',
-    'little star hairpin',
-    'rounded headphones',
-    'a small satchel',
-    'a shiny collar bell',
-  ])
-
-  return [
-    'Create one recognizable chibi humanoid game companion from the uploaded person.',
-    `Concept: ${species}, ${personality}, ${accessory}.`,
-    `Color palette: ${palette}.`,
-    `Style: ${petStylePrompts[state.petStyle] ?? petStylePrompts.潮玩}.`,
-    'Most important: keep a clear caricature likeness to the reference person, so the same person is recognizable.',
-    'Preserve facial identity cues: hair shape and color, hairline, face shape, eyebrow shape, eye shape, nose, mouth, skin tone, age impression, and expression.',
-    'Keep the uploaded clothing cues when visible, simplified into a cute full-body outfit.',
-    'Make a unified full-body chibi humanoid companion, not a portrait pasted on a body, not an animal body.',
-    'Cute toy proportions, big head, small body, small hands and feet, thick clean outline, polished cel-shaded mascot.',
-    'Do not turn the person into a generic baby doll; likeness is higher priority than cuteness.',
-    'No text, watermark, logo, political symbols, flags, or signs.',
-    'Flat pure chroma-key blue background #0000FF, no shadow, no blue or cyan on the character, full body centered.',
+const petGenerationPrompt = (state, identityDescription = '') => {
+  const identity = normalizeText(identityDescription).slice(0, 320)
+  const prompt = [
+    'FULL 2D CARTOON REDRAW. Create one illustrated chibi HUMANOID desktop-pet sprite. Face, hair and body must share one flat cartoon medium. No photo pixels, realistic skin, pores, lighting or texture.',
+    identity ? `Identity traits from the uploaded person: ${identity}` : 'Preserve the uploaded person as a recognizable caricature.',
+    'IDENTITY FIRST: preserve the described hairstyle, face shape, facial features, age, expression and clothing cues. Simplify without beautifying or replacing distinctive traits.',
+    'The person IS the pet: one unified human character. Front view; head about 70% of height; tiny crouching human body; short limbs; complete uncropped silhouette.',
+    'NO animal anatomy, ears, horns, tail, fur, paws, muzzle, helmet, mask, hood or invented accessory.',
+    `Style: ${petStylePrompts[state.petStyle] ?? petStylePrompts.潮玩}. Simple graphic face, solid colors, at most three hard-edged shade levels, thick dark outline, readable Codex-like sprite. No photo, 3D, glossy vinyl, gradients or painting.`,
+    'One character only. No props, text, logo, scenery, frame, floor, shadow, glow or particles. Center on a perfectly uniform pure white background with a wide empty margin.',
   ].join(' ')
+  if (prompt.length > 1_450) throw new Error('MiniMax 宠物提示词超过安全长度')
+  return prompt
 }
 
 const extractMinimaxImage = (payload) => {
@@ -681,6 +639,28 @@ const extractMinimaxImage = (payload) => {
   return {}
 }
 
+const fetchMinimaxIdentityDescription = async (source, extension) => {
+  const response = await fetch(minimaxVlmApiUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${minimaxApiKey}`,
+      'Content-Type': 'application/json',
+      'MM-API-Source': 'Minimax-MCP',
+    },
+    body: JSON.stringify({
+      prompt: 'Describe this person for a 2D caricature artist. Return one compact English sentence under 320 characters covering only visible hair color and shape, hairline, face shape, eyebrows, eyes, nose, mouth, skin tone, age impression, expression, and clothing. Do not identify or name the person.',
+      image_url: `data:${mimeForGeneratedImage(extension)};base64,${source.toString('base64')}`,
+    }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || (payload?.base_resp?.status_code && payload.base_resp.status_code !== 0)) {
+    throw new Error(payload?.base_resp?.status_msg || payload?.error?.message || `MiniMax 图片理解失败：${response.status}`)
+  }
+  const description = normalizeText(payload?.content).slice(0, 320)
+  if (!description) throw new Error('MiniMax 图片理解没有返回人物特征')
+  return description
+}
+
 const extensionForGeneratedImage = (buffer) => {
   if (buffer.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return '.png'
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return '.jpg'
@@ -691,6 +671,7 @@ const extensionForGeneratedImage = (buffer) => {
 const mimeForGeneratedImage = (extension) => {
   if (extension === '.png') return 'image/png'
   if (extension === '.webp') return 'image/webp'
+  if (extension === '.gif') return 'image/gif'
   return 'image/jpeg'
 }
 
@@ -767,9 +748,7 @@ const keepPrimaryAlphaComponent = (data, width, height) => {
   }
   if (!components.length) return
   components.sort((a, b) => b.length - a.length)
-  const minimumKeepSize = Math.max(240, Math.floor(components[0].length * 0.018))
   for (const pixels of components.slice(1)) {
-    if (pixels.length >= minimumKeepSize) continue
     for (const pixel of pixels) data[pixel * 4 + 3] = 0
   }
 }
@@ -784,7 +763,9 @@ const removeChromaBackground = async (buffer, extension) => {
     const { data, info } = normalized
     const { width, height } = info
     const background = estimateEdgeBackground(data, width, height)
-    const threshold = 58
+    const backgroundIsChromaBlue = background[2] > 120 && background[2] - background[0] > 35
+    const backgroundIsNearWhite = background.every((channel) => channel > 210)
+    const threshold = backgroundIsNearWhite ? 72 : 58
     const softThreshold = 34
     const visited = new Uint8Array(width * height)
     const queue = []
@@ -824,7 +805,7 @@ const removeChromaBackground = async (buffer, extension) => {
         const distance = colorDistance(data, index, background)
         data[index + 3] = distance < softThreshold ? 0 : Math.min(160, Math.round((distance - softThreshold) * 4))
       }
-      if (data[index + 3] > 0 && isGeneratedBackgroundPixel(data, index, background)) data[index + 3] = 0
+      if (data[index + 3] > 0 && backgroundIsChromaBlue && isGeneratedBackgroundPixel(data, index, background)) data[index + 3] = 0
       if (data[index + 3] > 12) {
         const x = pixel % width
         const y = Math.floor(pixel / width)
@@ -865,6 +846,20 @@ const removeChromaBackground = async (buffer, extension) => {
   } catch {
     return { buffer, extension, mime: mimeForGeneratedImage(extension) }
   }
+}
+
+const stylizeFallbackPet = async (buffer) => {
+  const metadata = await sharp(buffer).metadata()
+  const width = metadata.width ?? 720
+  const height = metadata.height ?? 840
+  const reduced = await sharp(buffer)
+    .resize({ width: Math.max(128, Math.round(width / 3)), height: Math.max(144, Math.round(height / 3)), fit: 'inside', kernel: 'nearest' })
+    .png({ palette: true, colors: 48, dither: 0 })
+    .toBuffer()
+  return sharp(reduced)
+    .resize({ width, height, fit: 'inside', kernel: 'nearest' })
+    .png()
+    .toBuffer()
 }
 
 const generatedPetAnimationSvg = ({ imageBuffer, mime, petName }) => {
@@ -918,11 +913,20 @@ const generatedPetAnimationSvg = ({ imageBuffer, mime, petName }) => {
 </svg>`
 }
 
-const fetchMinimaxImage = async (state, source = Buffer.alloc(0), publicImageUrl = '') => {
-  const useSubjectReference = process.env.MINIMAX_USE_SUBJECT_REFERENCE !== '0' && publicImageUrl
+const fetchMinimaxImage = async (state, source = Buffer.alloc(0), sourceExtension = '.jpg', publicImageUrl = '') => {
+  let identityDescription = ''
+  if (source.length) {
+    try {
+      identityDescription = await fetchMinimaxIdentityDescription(source, sourceExtension)
+    } catch (error) {
+      console.warn(`MiniMax identity analysis fallback: ${error instanceof Error ? error.message : 'unknown error'}`)
+    }
+  }
+  const useSubjectReference = !identityDescription && process.env.MINIMAX_USE_SUBJECT_REFERENCE !== '0' && publicImageUrl
+  const useTextIdentity = Boolean(identityDescription)
   const body = {
     model: 'image-01',
-    prompt: petGenerationPrompt(state, source),
+    prompt: petGenerationPrompt(state, identityDescription),
     aspect_ratio: '1:1',
     response_format: 'base64',
     n: 1,
@@ -953,11 +957,19 @@ const fetchMinimaxImage = async (state, source = Buffer.alloc(0), publicImageUrl
     throw new Error(payload.base_resp.status_msg || `MiniMax 生成失败：${payload.base_resp.status_code}`)
   }
   const image = extractMinimaxImage(payload)
-  if (image.b64) return Buffer.from(String(image.b64).replace(/^data:image\/\w+;base64,/, ''), 'base64')
+  if (image.b64) {
+    return {
+      buffer: Buffer.from(String(image.b64).replace(/^data:image\/\w+;base64,/, ''), 'base64'),
+      needsFallbackStylization: !useTextIdentity,
+    }
+  }
   if (image.url) {
     const imageResponse = await fetch(image.url)
     if (!imageResponse.ok) throw new Error(`MiniMax 图片下载失败：${imageResponse.status}`)
-    return Buffer.from(await imageResponse.arrayBuffer())
+    return {
+      buffer: Buffer.from(await imageResponse.arrayBuffer()),
+      needsFallbackStylization: !useTextIdentity,
+    }
   }
   throw new Error('MiniMax 没有返回可用图片')
 }
@@ -967,16 +979,18 @@ const generatePetImage = async (state) => {
   const sourcePath = uploadUrl ? join(uploadsDir, basename(uploadUrl)) : ''
   if (minimaxApiKey && uploadUrl && publicBaseUrl) {
     const source = sourcePath && existsSync(sourcePath) ? readFileSync(sourcePath) : Buffer.alloc(0)
-    const buffer = await fetchMinimaxImage(state, source, `${publicBaseUrl}${uploadUrl}`)
+    const generated = await fetchMinimaxImage(state, source, extname(uploadUrl).toLowerCase(), `${publicBaseUrl}${uploadUrl}`)
+    const buffer = generated.buffer
     if (!buffer.length || buffer.length > 8 * 1024 * 1024) throw new Error('MiniMax 返回图片无效')
     const extension = extensionForGeneratedImage(buffer)
     if (!extension) throw new Error('MiniMax 返回图片格式无效')
     const cutout = await removeChromaBackground(buffer, extension)
+    const finalBuffer = generated.needsFallbackStylization ? await stylizeFallbackPet(cutout.buffer) : cutout.buffer
     const imageName = `${randomBytes(16).toString('hex')}${cutout.extension}`
     const animationName = `${randomBytes(16).toString('hex')}.svg`
-    writeFileSync(join(generatedPetsDir, imageName), cutout.buffer)
+    writeFileSync(join(generatedPetsDir, imageName), finalBuffer)
     writeFileSync(join(generatedPetAnimationsDir, animationName), generatedPetAnimationSvg({
-      imageBuffer: cutout.buffer,
+      imageBuffer: finalBuffer,
       mime: cutout.mime,
       petName: state.petName,
     }))
