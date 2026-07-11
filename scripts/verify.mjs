@@ -178,6 +178,19 @@ try {
 
   await waitForServer()
 
+  const orphanName = '00000000000000000000000000000000'
+  const orphanAssets = [
+    join(dataDir, 'uploads', `${orphanName}.png`),
+    join(dataDir, 'generated-pets', `${orphanName}.svg`),
+    join(dataDir, 'generated-pet-animations', `${orphanName}.svg`),
+    join(dataDir, 'generated-videos', `${orphanName}.mp4`),
+  ]
+  for (const path of orphanAssets) writeFileSync(path, 'orphan verification asset')
+  await restartServer()
+  if (orphanAssets.some((path) => existsSync(path))) {
+    throw new Error('server startup should remove assets not referenced by any player state')
+  }
+
   await restartServer({ RATE_LIMIT_MAX: '3', RATE_LIMIT_WINDOW_MS: '60000', TRUST_PROXY: '' })
   const spoofedForwardedAttempt = async () => fetch(`${baseUrl}/api/health`, {
     headers: { 'X-Forwarded-For': `203.0.113.${randomBytes(1)[0]}` },

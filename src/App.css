@@ -1442,7 +1442,7 @@ button:disabled {
   bottom: 14px;
   width: min(calc(100% - 28px), 402px);
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
   padding: 7px;
   transform: translateX(-50%);

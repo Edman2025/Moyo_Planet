@@ -1,5 +1,5 @@
 import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto'
-import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import http from 'node:http'
@@ -192,6 +192,37 @@ const pruneDatabase = (now = Date.now()) => {
 }
 
 pruneDatabase()
+
+const pruneOrphanedAssets = () => {
+  const referenced = new Set()
+  for (const user of Object.values(db.users)) {
+    for (const url of [
+      user.state?.uploadedPreviewUrl,
+      user.state?.generatedPetUrl,
+      user.state?.generatedPetAnimationUrl,
+      user.state?.generatedVideoUrl,
+    ]) {
+      if (typeof url === 'string') referenced.add(url)
+    }
+  }
+  for (const [publicPrefix, directory] of [
+    ['/uploads', uploadsDir],
+    ['/generated-pets', generatedPetsDir],
+    ['/generated-pet-animations', generatedPetAnimationsDir],
+    ['/generated-videos', generatedVideosDir],
+  ]) {
+    for (const fileName of readdirSync(directory)) {
+      const path = join(directory, fileName)
+      try {
+        if (statSync(path).isFile() && !referenced.has(`${publicPrefix}/${fileName}`)) unlinkSync(path)
+      } catch {
+        // Cleanup is best-effort; public asset routes still enforce opaque safe paths.
+      }
+    }
+  }
+}
+
+pruneOrphanedAssets()
 
 const saveDb = () => {
   pruneDatabase()

@@ -147,6 +147,22 @@ try {
   if (!userCodeMatch) throw new Error('ui registration did not expose a player invite/login code')
   const playerUserCode = userCodeMatch[0]
 
+  const bottomNav = page.locator('.bottom-nav')
+  const navBox = await bottomNav.boundingBox()
+  if (!navBox || navBox.height > 80) {
+    throw new Error(`mobile bottom navigation wrapped or became too tall: ${navBox?.height ?? 'missing'}px`)
+  }
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  const careButtons = page.locator('.action-grid button')
+  const careButtonCount = await careButtons.count()
+  if (careButtonCount !== 8) throw new Error(`expected 8 home care actions, got ${careButtonCount}`)
+  const lastCareBox = await careButtons.nth(careButtonCount - 1).boundingBox()
+  const scrolledNavBox = await bottomNav.boundingBox()
+  if (!lastCareBox || !scrolledNavBox || lastCareBox.y + lastCareBox.height > scrolledNavBox.y - 4) {
+    throw new Error('mobile bottom navigation overlaps the home care actions at the bottom of the page')
+  }
+  await page.evaluate(() => window.scrollTo(0, 0))
+
   await page.locator('button').filter({ hasText: /^生成$/ }).click({ force: true })
   await page.locator('input[type=file]').waitFor({ state: 'attached', timeout: 10_000 })
   await page.locator('input[type=file]').setInputFiles({ name: 'ui-upload.png', mimeType: 'image/png', buffer: pngBytes })
