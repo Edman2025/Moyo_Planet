@@ -2,6 +2,15 @@
   "name": "moyo-planet",
   "private": true,
   "version": "0.0.0",
+  "description": "An open-source mobile social pet and life simulation game.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Edman2025/Moyo_Planet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Edman2025/Moyo_Planet/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -29,7 +38,7 @@
     "lucide-react": "^1.23.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",

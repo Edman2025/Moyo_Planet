@@ -1,6 +1,6 @@
 # 萌友星球 Moyo Planet
 
-移动端 H5 社交养成小游戏。当前版本是本地前后端可运行产品，支持玩家注册/登录、服务端存档、上传照片生成宠物、照顾、学习升年级、技能养成、工作赚钱、商店消费、城市聊天、通过真实玩家邀请码添加好友、好友农场、抢车位和任务领奖。
+开源的移动端 H5 社交养成小游戏。当前版本是本地前后端可运行产品，支持玩家注册/登录、服务端存档、上传照片生成宠物、照顾、学习升年级、技能养成、工作赚钱、商店消费、城市聊天、通过真实玩家邀请码添加好友、好友农场、抢车位和任务领奖。
 
 当前 Node API 会把账号、PBKDF2 密码哈希、游戏存档、公共城市聊天、共享车位状态和上传图片写入 `DATA_DIR` 指定目录；浏览器只保存登录 token。金币、钻石、学历、技能、任务、工作、停车和社交收益都由 `/api/action` 服务端结算，`/api/state` 只接受宠物名字和风格这类客户端可编辑外观字段，不能改写经济或成长进度。服务端要求写入类 API 使用 `application/json` 且请求体必须是 JSON 对象，非法 JSON、非对象 JSON 和非对象动作参数会返回明确的 400/415 错误；公开健康检查不暴露用户数量。服务端写入存档时会清洗字段、限制数值范围和数组长度、拒绝外部上传 URL，并压平昵称、宠物名、上传文件名和聊天内容中的控制字符；公开昵称、宠物名和城市聊天会拒绝链接或联系方式，避免真实用户公共界面被引流信息污染。接口默认按直连 socket 地址限流，不信任客户端传入的 `X-Forwarded-For`；如果部署在会覆盖转发头的可信反向代理后面，可设置 `TRUST_PROXY=1`，并可用 `RATE_LIMIT_MAX` 和 `RATE_LIMIT_WINDOW_MS` 调整窗口。服务端会清理过期或指向不存在用户的 session，并清理无效或与用户状态不一致的共享车位，避免异常恢复后出现幽灵登录或幽灵占位。存档使用临时文件原子替换，并保留上一份 `moyo-db.backup.json` 用于启动恢复。静态资源托管会限制路径必须位于 `dist/` 内，上传访问只使用服务端生成的随机文件名，不暴露内部用户 ID；用户替换上传或重置进度时会清理旧上传文件。所有响应带基础安全头、CSP 和权限策略。面向公网真实用户时，应把 `DATA_DIR` 挂到持久化磁盘，并在反向代理层启用 HTTPS、外部备份和访问日志。
 
@@ -49,7 +49,7 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:4173
 本地页面如果要复用线上 MiniMax 生成链路，可以用公网 API 启动前端：
 
 ```bash
-VITE_API_BASE_URL=http://8.149.140.26:4173 npm run dev:client
+VITE_API_BASE_URL=https://your-api.example npm run dev:client
 ```
 
 这会让 `http://127.0.0.1:5173` 直接请求公网 API，并显示公网生成的 `/uploads` 与 `/generated-pets` 图片。
@@ -113,3 +113,11 @@ npm run release:full
 `npm run release:check` 会串行执行 readiness audit、verify:clean-data、verify:install、verify:secrets、verify:dependencies、lint、build、verify、verify:journey、verify:ui、verify:docker-context，并用临时 `DATA_DIR` 启动生产服务，检查 `GET/HEAD /api/health`、首页生产包可访问性、生产模式真实注册、会话恢复和 `moyo-db.json` 持久化；末尾会再次执行 clean-data 和 readiness，适合作为上线前本机闸门。
 `npm run release:full` 会在 Docker daemon 可用时串行执行 `release:check`、Docker 镜像构建验证、Docker 容器运行验证和最终 clean-data，是上线前最完整的一键闸门。
 `.github/workflows/release-check.yml` 会在 GitHub Actions 中运行 `npm run release:check`、`npm run verify:docker-build` 和 `npm run verify:docker-runtime`，用于在有 Docker daemon 的 CI 环境补充验证真实镜像构建和容器运行。
+
+## 参与贡献
+
+欢迎通过 Issue 报告问题或提出建议。提交代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题请按照 [SECURITY.md](SECURITY.md) 私下报告，不要在公开 Issue 中披露漏洞细节。
+
+## 开源许可
+
+项目源代码采用 [MIT License](LICENSE) 开源。上传照片、模型生成内容和部署时接入的第三方服务仍受其各自条款约束。
